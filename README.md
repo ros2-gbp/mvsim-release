@@ -1,3 +1,26 @@
+## mvsim (foxy) - 0.6.1-1
+
+The packages in the `mvsim` repository were released into the `foxy` distro by running `/usr/bin/bloom-release -y --ros-distro foxy mvsim` on `Sat, 04 Mar 2023 01:22:12 -0000`
+
+The `mvsim` package was released.
+
+Version of package(s) in repository `mvsim`:
+
+- upstream repository: https://github.com/MRPT/mvsim.git
+- release repository: https://github.com/ros2-gbp/mvsim-release.git
+- rosdistro version: `0.6.0-1`
+- old version: `0.6.0-1`
+- new version: `0.6.1-1`
+
+Versions of tools used:
+
+- bloom version: `0.11.2`
+- catkin_pkg version: `0.5.2`
+- rosdep version: `0.22.1`
+- rosdistro version: `0.9.0`
+- vcstools version: `0.1.42`
+
+
 ## mvsim (rolling) - 0.6.0-1
 
 The packages in the `mvsim` repository were released into the `rolling` distro by running `/usr/bin/bloom-release -y --ros-distro rolling mvsim` on `Sun, 26 Feb 2023 00:04:59 -0000`
