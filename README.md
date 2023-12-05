@@ -1,3 +1,26 @@
+## mvsim (humble) - 0.8.3-1
+
+The packages in the `mvsim` repository were released into the `humble` distro by running `/usr/bin/bloom-release -r humble mvsim -y` on `Tue, 05 Dec 2023 08:53:09 -0000`
+
+The `mvsim` package was released.
+
+Version of package(s) in repository `mvsim`:
+
+- upstream repository: https://github.com/MRPT/mvsim.git
+- release repository: https://github.com/ros2-gbp/mvsim-release.git
+- rosdistro version: `0.8.2-1`
+- old version: `0.8.2-1`
+- new version: `0.8.3-1`
+
+Versions of tools used:
+
+- bloom version: `0.11.2`
+- catkin_pkg version: `1.0.0`
+- rosdep version: `0.22.2`
+- rosdistro version: `0.9.0`
+- vcstools version: `0.1.42`
+
+
 ## mvsim (iron) - 0.8.3-1
 
 The packages in the `mvsim` repository were released into the `iron` distro by running `/usr/bin/bloom-release -r iron mvsim -y` on `Tue, 05 Dec 2023 08:50:05 -0000`
