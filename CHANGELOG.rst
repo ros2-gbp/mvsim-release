@@ -2,6 +2,19 @@
 Changelog for package mvsim
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.9.1 (2024-03-05)
+------------------
+* Fix use of mrpt bridge to publish XYZIRT point clouds too for ROS 1
+* Contributors: Jose Luis Blanco-Claraco
+
+0.9.0 (2024-03-02)
+------------------
+* Do not publish tf world->map
+* Expose do_fake_localization as ROS 2 launch file argument
+* fix build with older mrpt
+* 3D Lidar: also generate "ring" ID per point
+* Contributors: Jose Luis Blanco-Claraco
+
 0.8.3 (2023-12-05)
 ------------------
 * Generate ground truth trajectory files in the TUM format

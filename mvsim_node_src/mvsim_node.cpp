@@ -14,6 +14,7 @@
 #include <mrpt/system/CTicTac.h>
 #include <mrpt/system/filesystem.h>
 #include <mrpt/system/os.h>	 // kbhit()
+#include <mrpt/version.h>
 #include <mvsim/WorldElements/OccupancyGridMap.h>
 
 #if PACKAGE_ROS_VERSION == 1
@@ -71,6 +72,14 @@ using Msg_TransformStamped = geometry_msgs::TransformStamped;
 using Msg_OccupancyGrid = nav_msgs::msg::OccupancyGrid;
 using Msg_MapMetaData = nav_msgs::msg::MapMetaData;
 using Msg_TransformStamped = geometry_msgs::msg::TransformStamped;
+#endif
+
+#if MRPT_VERSION >= 0x020b04  // >=2.11.4?
+#define HAVE_POINTS_XYZIRT
+#endif
+
+#if defined(HAVE_POINTS_XYZIRT)
+#include <mrpt/maps/CPointsMapXYZIRT.h>
 #endif
 
 #include <iostream>
@@ -560,7 +569,7 @@ void MVSimNode::notifyROSWorldIsUpdated()
 	}
 
 	// Publish the static transform /world -> /map
-	sendStaticTF("world", "map", tfIdentity_, myNow());
+	// sendStaticTF("world", "map", tfIdentity_, myNow());
 }
 
 #if PACKAGE_ROS_VERSION == 1
@@ -1533,17 +1542,26 @@ void MVSimNode::internalOn(
 		mrpt::obs::T3DPointsProjectionParams pp;
 		pp.takeIntoAccountSensorPoseOnRobot = false;
 
-		if (auto* sPts = dynamic_cast<const mrpt::maps::CSimplePointsMap*>(
+#if defined(HAVE_POINTS_XYZIRT)
+		if (auto* xyzirt = dynamic_cast<const mrpt::maps::CPointsMapXYZIRT*>(
 				obs.pointcloud.get());
-			sPts)
+			xyzirt)
 		{
-			mrpt2ros::toROS(*sPts, msg_header, msg_pts);
+			mrpt2ros::toROS(*xyzirt, msg_header, msg_pts);
 		}
-		else if (auto* xyzi = dynamic_cast<const mrpt::maps::CPointsMapXYZI*>(
-					 obs.pointcloud.get());
-				 xyzi)
+		else
+#endif
+			if (auto* xyzi = dynamic_cast<const mrpt::maps::CPointsMapXYZI*>(
+					obs.pointcloud.get());
+				xyzi)
 		{
 			mrpt2ros::toROS(*xyzi, msg_header, msg_pts);
+		}
+		else if (auto* sPts = dynamic_cast<const mrpt::maps::CSimplePointsMap*>(
+					 obs.pointcloud.get());
+				 sPts)
+		{
+			mrpt2ros::toROS(*sPts, msg_header, msg_pts);
 		}
 		else
 		{
