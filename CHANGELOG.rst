@@ -2,6 +2,33 @@
 Changelog for package mvsim
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.13.0 (2024-12-24)
+-------------------
+* Add ROS1 generic launcher
+* Port demos to the generic ros2 launch file so all rosargs are now exposed in all demos
+* create generic launch_world ros2 file
+* ROS node: new param "publish_tf_odom2baselink"
+* ROS2 warehouse demo launch: add use_rviz argument
+* Update README.md: Mark ROS2 Iron as EOL
+* Readme: remove obsolete ROS1 wiki link
+* ElevationMap from XML: Ensure trimmed input string in kernel
+* Alternative reference method for UTM world coordinates
+* Implement world georeferenciation via UTM zone number
+* Fix targets order for prev commit
+* Fix build without ZMQ
+* Contributors: Jose Luis Blanco-Claraco
+
+0.12.1 (2024-12-04)
+-------------------
+* Merge pull request `#58 <https://github.com/MRPT/mvsim/issues/58>`_ from MichaelGrupp/fix-navsatfix-ros1
+  Fix ROS1 build
+* Merge pull request `#59 <https://github.com/MRPT/mvsim/issues/59>`_ from MichaelGrupp/fix-segfault
+  Fix segfault caused by uninitialized publisher
+* Fix segfault caused by uninitialized publisher
+  Crash occurs for example when running the demo_warehouse.launch with
+  ROS 1. Debug build + gdb revealed that the issue was this publisher.
+* Contributors: Jose Luis Blanco-Claraco, Michael Grupp
+
 0.12.0 (2024-12-04)
 -------------------
 * DEM: add optional kernel filtering
