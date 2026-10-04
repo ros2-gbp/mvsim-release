@@ -1,0 +1,12 @@
+Source: ros-humble-mvsim
+Section: misc
+Priority: optional
+Maintainer: "Jose-Luis Blanco-Claraco" <jlblanco@ual.es>
+Build-Depends: debhelper (>= 9.0.0), cmake, libcli11-dev, libprotobuf-dev, libprotoc-dev, libtbb-dev, libzmq3-dev, protobuf-compiler, pybind11-dev, python3-pip, python3-protobuf, python3-venv, ros-humble-ament-cmake, ros-humble-ament-cmake-gmock, ros-humble-ament-cmake-gtest, ros-humble-ament-cmake-xmllint, ros-humble-ament-lint-auto <!nocheck>, ros-humble-ament-lint-common <!nocheck>, ros-humble-mrpt-gui, ros-humble-mrpt-libros-bridge, ros-humble-mrpt-maps, ros-humble-mrpt-tfest, ros-humble-mrpt-topography, ros-humble-nav-msgs, ros-humble-ros-environment, ros-humble-sensor-msgs, ros-humble-stereo-msgs, ros-humble-tf2, ros-humble-tf2-geometry-msgs, ros-humble-visualization-msgs, unzip, wget, ros-humble-ros-workspace
+Homepage: https://wiki.ros.org/mvsim
+Standards-Version: 3.9.2
+
+Package: ros-humble-mvsim
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, libcli11-dev, libprotobuf-dev, libprotoc-dev, libtbb-dev, libzmq3-dev, protobuf-compiler, pybind11-dev, python3-pip, python3-protobuf, python3-venv, ros-humble-mrpt-gui, ros-humble-mrpt-libros-bridge, ros-humble-mrpt-maps, ros-humble-mrpt-tfest, ros-humble-mrpt-topography, ros-humble-nav-msgs, ros-humble-ros2launch, ros-humble-sensor-msgs, ros-humble-stereo-msgs, ros-humble-tf2, ros-humble-tf2-geometry-msgs, ros-humble-visualization-msgs, unzip, wget, ros-humble-ros-workspace
+Description: A lightweight multivehicle simulation framework.
