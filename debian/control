@@ -1,0 +1,12 @@
+Source: ros-lyrical-mvsim
+Section: misc
+Priority: optional
+Maintainer: "Jose-Luis Blanco-Claraco" <jlblanco@ual.es>
+Build-Depends: debhelper (>= 9.0.0), cmake, libcli11-dev, libeigen3-dev, libprotobuf-dev, libprotoc-dev, libtbb-dev, libzmq3-dev, protobuf-compiler, pybind11-dev, python3-pip, python3-protobuf, python3-venv, ros-lyrical-ament-cmake, ros-lyrical-ament-cmake-gmock, ros-lyrical-ament-cmake-gtest, ros-lyrical-ament-cmake-xmllint, ros-lyrical-ament-lint-auto <!nocheck>, ros-lyrical-ament-lint-common <!nocheck>, ros-lyrical-controller-manager, ros-lyrical-diagnostic-msgs, ros-lyrical-hardware-interface, ros-lyrical-mrpt-imgui, ros-lyrical-mrpt-imgui-vendor, ros-lyrical-mrpt-libros-bridge, ros-lyrical-mrpt-maps, ros-lyrical-mrpt-tfest, ros-lyrical-mrpt-topography, ros-lyrical-nav-msgs, ros-lyrical-ros-environment, ros-lyrical-sensor-msgs, ros-lyrical-simulation-interfaces, ros-lyrical-stereo-msgs, ros-lyrical-tf2, ros-lyrical-tf2-geometry-msgs, ros-lyrical-visualization-msgs, unzip, wget, ros-lyrical-ros-workspace
+Homepage: https://wiki.ros.org/mvsim
+Standards-Version: 3.9.2
+
+Package: ros-lyrical-mvsim
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, libcli11-dev, libeigen3-dev, libprotobuf-dev, libprotoc-dev, libtbb-dev, libzmq3-dev, protobuf-compiler, pybind11-dev, python3-pip, python3-protobuf, python3-venv, python3-yaml, ros-lyrical-controller-manager, ros-lyrical-diagnostic-msgs, ros-lyrical-diff-drive-controller, ros-lyrical-hardware-interface, ros-lyrical-joint-state-broadcaster, ros-lyrical-mrpt-imgui, ros-lyrical-mrpt-imgui-vendor, ros-lyrical-mrpt-libros-bridge, ros-lyrical-mrpt-maps, ros-lyrical-mrpt-tfest, ros-lyrical-mrpt-topography, ros-lyrical-nav-msgs, ros-lyrical-robot-state-publisher, ros-lyrical-ros2launch, ros-lyrical-sensor-msgs, ros-lyrical-simulation-interfaces, ros-lyrical-stereo-msgs, ros-lyrical-tf2, ros-lyrical-tf2-geometry-msgs, ros-lyrical-visualization-msgs, unzip, wget, ros-lyrical-ros-workspace
+Description: A lightweight multivehicle simulation framework.
