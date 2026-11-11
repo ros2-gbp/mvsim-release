@@ -37,6 +37,7 @@
 #include "LidarSimulator.h"
 #include "OdometrySimulator.h"
 #include "SceneBuilder.h"
+#include "TimeUtils.h"
 #include "TrajectorySource.h"
 
 using namespace mvsim_dataset_gen;
@@ -73,7 +74,7 @@ int main(int argc, char** argv)
 	std::string trajectoryPath;
 	std::string outputPath;
 	std::string vehicleName;
-	std::string shutterStr = "global";
+	std::string shutterStr = "rolling";
 	double duration = -1.0;
 	bool noiseless = false;
 	double noiseScale = 1.0;
@@ -112,7 +113,10 @@ int main(int argc, char** argv)
 	cli.add_option("-o,--output", outputPath, "Output .rawlog file")->required();
 	cli.add_option("--vehicle", vehicleName, "Name of the vehicle carrying the sensors");
 	cli.add_option("--duration", duration, "Simulation duration [s] (default: trajectory span)");
-	cli.add_option("--shutter", shutterStr, "LiDAR shutter mode: global (default) | rolling")
+	cli.add_option(
+		   "--shutter", shutterStr,
+		   "LiDAR shutter mode: rolling (default: each azimuth column fires at its own time and "
+		   "pose, per-point 't' in [0, sensor period)) | global (one pose per sweep, t=0)")
 		->check(CLI::IsMember({"global", "rolling"}));
 	cli.add_flag("--noiseless", noiseless, "Force every sensor noise sigma to zero");
 	cli.add_option("--noise-scale", noiseScale, "Scale every XML-configured noise sigma");
@@ -214,6 +218,7 @@ int main(int argc, char** argv)
 
 		LidarSimOptions simOpts;
 		simOpts.shutter = shutterStr == "rolling" ? ShutterMode::Rolling : ShutterMode::Global;
+		std::cout << "[mvsim-dataset-gen] LiDAR shutter mode: " << shutterStr << "\n";
 
 		std::mt19937 rng(seed);
 
@@ -244,7 +249,25 @@ int main(int argc, char** argv)
 
 			auto opts = std::make_shared<LidarSimOptions>(simOpts);
 			opts->rangeStdNoise = noiseless ? 0.0 : lidar->rangeStdNoise() * noiseScale;
+			if (!noiseless)
+			{
+				const auto& em = lidar->errorModel();
+				opts->rangeStdNoisePerMeter = em.rangeStdNoisePerMeter * noiseScale;
+				opts->beamDivergenceDeg = em.beamDivergenceDeg;
+				opts->maxIncidenceDeg = em.maxIncidenceDeg;
+				opts->mixedPixelProbability = em.mixedPixelProbability;
+				drawCalibrationErrors(
+					*opts, model->vertRays(), em.beamElevationStdDeg * noiseScale,
+					em.beamAzimuthStdDeg * noiseScale, em.beamRangeBiasStd * noiseScale,
+					em.calibrationSeed);
+			}
 			opts->generateIntensity = lidar->generateIntensityFromRGB();
+			if (lidar->generateRGB())
+			{
+				std::cerr << "[mvsim-dataset-gen] Warning: lidar '" << lidar->getName()
+						  << "' has generate_rgb=true, but the ray tracer has no colors: "
+							 "points will have no RGB fields.\n";
+			}
 
 			const mrpt::poses::CPose3D sensorPoseOnVeh = lidar->sensorPoseOnVehicle();
 			const std::string label = lidar->getName();
@@ -256,9 +279,9 @@ int main(int argc, char** argv)
 					 auto obs = simulateLidarSweep(
 						 scene, *model, traj, sensorPoseOnVeh, t, label, *opts, rng);
 					 nSweeps++;
-					 gtVehicle.insert(mrpt::Clock::fromDouble(t), traj.poseAt(t).asTPose());
+					 gtVehicle.insert(timeFromSeconds(t), traj.poseAt(t).asTPose());
 					 gtSensors[label].insert(
-						 mrpt::Clock::fromDouble(t), (traj.poseAt(t) + sensorPoseOnVeh).asTPose());
+						 timeFromSeconds(t), (traj.poseAt(t) + sensorPoseOnVeh).asTPose());
 					 return obs;
 				 }});
 		}
