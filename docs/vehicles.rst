@@ -333,9 +333,15 @@ or rebounding.
 
 **Skid-steer robots** (``differential_4_wheels``) turn slower than their wheel speeds imply,
 since their wheels must slide sideways to turn (e.g. ~60% of the commanded rate for the
-Jackal, spinning in place). As in ROS ``diff_drive_controller``, the optional
-``<wheel_separation_multiplier>`` (default 1) multiplies the wheel separation used to
-compute the wheel speed setpoints to compensate it.
+Jackal, spinning in place). The controller compensates it: while the vehicle turns steadily,
+it estimates the turn slip ratio (the yaw rate implied by the wheel speeds over the actual
+yaw rate of the vehicle, as measured by an ideal gyroscope), low-pass filtered with
+``<slip_compensation_tau>`` (default 0.2 s; 0 disables it), and multiplies the turn rate used
+for the wheel speed setpoints by it, up to ``<slip_compensation_max>`` (default 5). The ratio
+is 1 for vehicles whose wheels do not slip, so it has no effect on them. As in ROS
+``diff_drive_controller``, ``<wheel_separation_multiplier>`` (default 1) also multiplies the
+wheel separation used to compute the wheel speed setpoints, but it is not needed with the
+compensation.
 
 **Tuning:** keep ``max_torque`` below the traction limit of the driven wheels
 (:math:`\mu \, N \, R`, with :math:`N` the wheel load), except for skid-steer vehicles,
@@ -450,6 +456,14 @@ toggled with the **"Trajectories"** item of the GUI "View" menu. Whether it star
    ``demo_trajectory.world.xml`` and ``demo_trajectory_ackermann.world.xml`` demos in
    :doc:`demo_worlds` for a complete example (square loop, figure-eight, and
    point-to-point presets, selectable from a single ``TRAJECTORY`` variable).
+
+ros2_control
+~~~~~~~~~~~~
+
+**Class:** ``ros2_control`` (differential, Ackermann and Ackermann with drivetrain)
+
+Joint-level commands (wheel velocities or torques, and steering angles) from standard
+ros2_control controllers, through the ROS 2 node. See :ref:`ros2_control`.
 
 5. Friction Models
 -------------------
@@ -634,7 +648,7 @@ Generic car-like vehicle with Ackermann steering.
 * Front-wheel drive (its ``<drivetrain>`` block, Torsen 4WD, only applies if the dynamics
   class is changed to ``ackermann_drivetrain``)
 * Controller: ``twist_front_steer_pid`` by default; select another one (e.g.
-  ``twist_ideal``) with the ``controller`` include variable:
+  ``twist_ideal`` or ``ros2_control``) with the ``controller`` include variable:
   ``<include file="ackermann.vehicle.xml" controller="twist_ideal" />``
 
 Pickup Truck
@@ -668,6 +682,8 @@ Agricultural robot with custom 3D model and Ackermann drivetrain.
 * Wheelbase: 0.62 m
 * Max steering: ±35°, at up to 90°/s
 * Open rear-wheel drive
+* Controller: ``twist_front_steer_pid`` by default, or ``ros2_control`` with the
+  ``controller`` include variable
 
 7. Creating Custom Vehicles
 ----------------------------
@@ -896,12 +912,26 @@ Enable vehicle logging for debugging:
 .. code-block:: xml
 
    <log_path>/path/to/logs/</log_path>
+   <auto_start_recording>true</auto_start_recording>
+   <log_period>0.01</log_period>
 
 This creates CSV files:
 
 * ``mvsim_<name>_pose.csv`` - Vehicle pose and velocity over time (and the chassis
   suspension displacement ``susp_z``, ``susp_roll``, ``susp_pitch``, if enabled)
-* ``mvsim_<name>_wheel_<N>.csv`` - Per-wheel forces, torques, and velocities
+* ``mvsim_<name>_wheel_<N>.csv`` - Per-wheel forces, torques, and velocities, and the
+  friction parameters in effect at the wheel (``friction_mu``, ``friction_C_rr``),
+  which reflect the per-region overrides (see :ref:`physics`)
+
+Each file name is prefixed with ``session_<UNIX time>-``. ``<log_path>`` may contain
+variables (e.g. ``$env{LOG_DIR}/``); its directory is created if it does not exist.
+``<auto_start_recording>`` starts recording as soon as the simulation starts.
+
+``<log_period>`` sets the period, in seconds of simulated time, between consecutive rows
+of the logs (both the CSV files and the ROS 2 log topics below). By default (``0``),
+one row is written at every simulation step, which may be too much for small time steps
+(e.g. 1000 rows/s with ``<simul_timestep>0.001</simul_timestep>``).
+A recording always starts with a row written at once.
 
 10. ROS 2 Topics
 -----------------
@@ -935,7 +965,8 @@ Always published for each vehicle:
 * ``<VEH>/chassis_markers`` (visualization_msgs/MarkerArray) - RViz markers for chassis and wheel visualization
 * ``<VEH>/chassis_polygon`` (geometry_msgs/Polygon) - 2D footprint polygon of the vehicle
 * ``<VEH>/tf`` (tf2_msgs/TFMessage) - Dynamic transforms (odom→base_link, sensor frames)
-* ``<VEH>/tf_static`` (tf2_msgs/TFMessage) - Static transforms (base_link→base_footprint)
+* ``<VEH>/tf_static`` (tf2_msgs/TFMessage) - Static transforms (base_link→base_footprint, only
+  for the default vehicle frame name, see `Coordinate Frames`_)
 
 Fake Localization Topics
 ~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -991,6 +1022,18 @@ MVSim uses the REP-105 standard coordinate frames:
 * ``base_footprint`` - Projection of base_link onto the ground plane
 * ``<sensor_name>`` - Individual sensor frames (camera, lidar, etc.)
 
+The vehicle frame, on the ground, is named ``base_link``. Robots whose URDF has another
+frame on the ground (e.g. ``base_footprint``, with ``base_link`` above it) can use that
+name instead, set in the vehicle (or vehicle class) XML. Then, the static
+``base_link -> base_footprint`` TF is not published, since the URDF (e.g. with
+``robot_state_publisher``) defines the rest of the frames:
+
+.. code-block:: xml
+
+   <base_frame_id>base_footprint</base_frame_id>
+
+:ref:`mvsim-urdf2xml` sets it from the URDF.
+
 CSV Logger → ROS 2 publishing
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -1003,7 +1046,8 @@ If publishing log topics is enabled via ``publish_log_topics:=True``:
       world_file:=my.world.xml \
       publish_log_topics:=True
 
-these topics will be created (per vehicle, lazily on first data):
+these topics will be created (per vehicle, lazily on first data), one message per log
+row (see ``<log_period>`` above to limit their rate):
 
 
 * ``<VEH>/log/pose/Timestamp``          (Float64)
