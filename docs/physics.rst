@@ -414,7 +414,8 @@ interaction suitable for indoor robots and general applications.
    slide sideways to turn) turns slower than its wheel speeds imply: e.g. for wheels at
    :math:`(\pm a, \pm b)` and equal loads, spinning in place at
    :math:`\omega = \omega_{cmd} \, b^2 / (a^2 + b^2)`. This is a well-known behavior of
-   real skid-steer robots, see ``wheel_separation_multiplier`` in :doc:`vehicles`.
+   real skid-steer robots, compensated by the ``twist_pid`` controller (see
+   :doc:`vehicles`).
 
 7. Update wheel angular velocity:
 
@@ -649,11 +650,18 @@ The friction model incorporates these forces in both lateral and longitudinal di
 
 * **Lateral:** The gravity slope force is added to the impulse that cancels lateral
   velocity, preventing the vehicle from sliding sideways on slopes.
-* **Longitudinal:** The gravity slope force is added to the contact-patch friction
-  (clamped by remaining friction capacity), counteracting the tendency to roll downhill.
+* **Longitudinal, rolling wheel:** The gravity slope force accelerates the chassis, and it
+  is included in the velocity of the wheel center that the wheel must follow to roll without
+  slipping within the step. Hence, the ground friction that balances it goes through the
+  wheel spin dynamics, and the motors must provide the torque to hold or climb the slope:
+  the motor torques (and the wheel speed tracking of their controllers) depend on the slope.
+* **Longitudinal, wheel at rest:** When both the wheel spin and the velocity of its center
+  are below 1 cm/s, the contact patch holds the wheel, as a non-backdrivable drivetrain or a
+  brake would: the gravity slope force is added to the contact-patch friction (clamped by the
+  remaining friction capacity), so a vehicle stopped on a slope does not creep.
 
-This ensures vehicles remain stationary on slopes when no motor torque is applied,
-and behave realistically when driving on uneven terrain with elevation maps.
+The same applies to vehicles with ideal controllers (``twist_ideal``, ``trajectory``),
+whose chassis velocity is imposed: the contact patch always absorbs the gravity component.
 
 Per-Region Friction Overrides
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -983,8 +991,9 @@ Given desired :math:`v_{desired}, \omega_{desired}`, compute wheel velocities:
    v_r = v + \frac{\omega \cdot w}{2}
 
 where :math:`w = |y_r - y_l|` is the wheel track width, times the optional
-``wheel_separation_multiplier`` of the ``twist_pid`` controller (default 1), which
-compensates the slower turning of skid-steer robots (see the friction models).
+``wheel_separation_multiplier`` of the ``twist_pid`` controller (default 1), and with
+:math:`\omega` multiplied by the estimated turn slip ratio of the vehicle, which compensates
+the slower turning of skid-steer robots (see the friction models and :doc:`vehicles`).
 
 Ackermann Steering Dynamics
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
