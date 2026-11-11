@@ -25,6 +25,10 @@ namespace mvsim
  * The number of rays in the vertical FOV and the number of samples in each
  * horizontal row are configurable.
  *
+ * Optionally, each point carries the color of the scene where the ray hits
+ * (`generate_rgb`), as in RGB LiDARs (e.g. Ouster Rev8), in the uint8 point
+ * fields `color_r`, `color_g`, `color_b`.
+ *
  * \ingroup sensors_module
  */
 class Lidar3D : public SensorBase
@@ -56,6 +60,32 @@ class Lidar3D : public SensorBase
 	float maxRange() const { return maxRange_; }
 	double rangeStdNoise() const { return rangeStdNoise_; }
 	bool generateIntensityFromRGB() const { return generateIntensityFromRGB_; }
+	bool generateRGB() const { return generateRGB_; }
+
+	/** Realistic sensor error model. Applied by the offline ray tracer
+	 * (mvsim-dataset-gen) only; all zero: disabled (the default). */
+	struct ErrorModel
+	{
+		/** Range noise std growing linearly with range [m per m]. */
+		double rangeStdNoisePerMeter = 0;
+		/** Full beam divergence [deg]: the footprint on an oblique surface
+		 * spreads the return over a range interval. */
+		double beamDivergenceDeg = 0;
+		/** No return beyond this incidence angle [deg] (0: disabled). */
+		double maxIncidenceDeg = 0;
+		/** Probability of a mixed return (a range between both surfaces)
+		 * at a depth edge between neighbor rays. */
+		double mixedPixelProbability = 0;
+		/** Per-beam calibration errors (std of the elevation and azimuth
+		 * offsets [deg], and of the range bias [m]), drawn once per run from
+		 * calibrationSeed. Rays sample the scene along the perturbed
+		 * direction, but points are reported along the nominal one. */
+		double beamElevationStdDeg = 0;
+		double beamAzimuthStdDeg = 0;
+		double beamRangeBiasStd = 0;
+		int calibrationSeed = 0;
+	};
+	const ErrorModel& errorModel() const { return errorModel_; }
 
 	/** The sensor's pose on the vehicle. Equivalent to getRelativePose(),
 	 * exposed under a public, non-overridden name: Lidar3D re-declares
@@ -80,6 +110,12 @@ class Lidar3D : public SensorBase
 	mrpt::poses::CPose3D sensorPoseOnVeh_;
 
 	double rangeStdNoise_ = 0.01;
+	ErrorModel errorModel_;
+
+	/// Precomputed unit-variance noise of this sensor (reproducible with <random_seed>)
+	std::vector<float> noiseSeq_;
+	size_t noiseIdx_ = 0;
+
 	bool ignore_parent_body_ = false;
 
 	float viz_pointSize_ = 3.0f;
@@ -122,6 +158,10 @@ class Lidar3D : public SensorBase
 	/** If true, intensity values will be generated from the grayscale of
 	 *  the rendered RGB image for each lidar return. */
 	bool generateIntensityFromRGB_ = true;
+
+	/** If true, each point gets the color (`color_{r,g,b}` uint8 fields)
+	 *  of the rendered RGB image pixel of its lidar return. */
+	bool generateRGB_ = false;
 
 	struct PerRayLUT
 	{
