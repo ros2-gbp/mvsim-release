@@ -48,7 +48,7 @@ add_library(${PROJECT_NAME}
 	include/mvsim/GUIPanel.h
 	include/mvsim/HumanActor.h
 	include/mvsim/Joystick.h
-	include/mvsim/mvsim_version.h
+	${MVSIM_GENERATED_INCLUDE_DIR}/mvsim/mvsim_version.h
 	include/mvsim/mvsim.h
 	include/mvsim/PID_Controller.h
 	include/mvsim/PoseTrajectoryFollower.h
@@ -98,12 +98,14 @@ add_library(${PROJECT_NAME}
 
 	# VehicleDynamics:
 	src/VehicleDynamics/VehicleAckermann_ControllerFrontSteerPID.cpp
+	src/VehicleDynamics/VehicleAckermann_ControllerJointCommands.cpp
 	src/VehicleDynamics/VehicleAckermann_ControllerRaw.cpp
 	src/VehicleDynamics/VehicleAckermann_ControllerTrajectory.cpp
 	src/VehicleDynamics/VehicleAckermann_ControllerTwistIdeal.cpp
 	src/VehicleDynamics/VehicleAckermann_ControllerTwistFrontSteerPID.cpp
 	src/VehicleDynamics/VehicleAckermann.cpp
 	src/VehicleDynamics/VehicleAckermann_Drivetrain_ControllerFrontSteerPID.cpp
+	src/VehicleDynamics/VehicleAckermann_Drivetrain_ControllerJointCommands.cpp
 	src/VehicleDynamics/VehicleAckermann_Drivetrain_ControllerRaw.cpp
 	src/VehicleDynamics/Vehicleackermann_Drivetrain_ControllerTwistFrontSteerPID.cpp
 	src/VehicleDynamics/VehicleAckermann_Drivetrain.cpp
@@ -188,4 +190,14 @@ PUBLIC
 target_include_directories(${PROJECT_NAME}
 	SYSTEM PUBLIC
 		$<BUILD_INTERFACE:${mvsim_SOURCE_DIR}/externals/rapidxml>
+)
+
+# Generated version header (see the root CMakeLists.txt):
+target_include_directories(${PROJECT_NAME}
+	PUBLIC
+		$<BUILD_INTERFACE:${MVSIM_GENERATED_INCLUDE_DIR}>
+)
+install(
+	FILES ${MVSIM_GENERATED_INCLUDE_DIR}/mvsim/mvsim_version.h
+	DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mvsim
 )
