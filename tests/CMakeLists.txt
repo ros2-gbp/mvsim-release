@@ -95,8 +95,26 @@ mvsim_add_test(
 	)
 
 mvsim_add_test(
+	TARGET test_lidar3d_rgb
+	SOURCES test_lidar3d_rgb.cpp
+	LINK_LIBRARIES mvsim::simulator
+	)
+
+mvsim_add_test(
+	TARGET test_actor_follow_terrain
+	SOURCES test_actor_follow_terrain.cpp
+	LINK_LIBRARIES mvsim::simulator
+	)
+
+mvsim_add_test(
 	TARGET test_wheel_joints
 	SOURCES test_wheel_joints.cpp
+	LINK_LIBRARIES mvsim::simulator
+	)
+
+mvsim_add_test(
+	TARGET test_steering_joints
+	SOURCES test_steering_joints.cpp
 	LINK_LIBRARIES mvsim::simulator
 	)
 
@@ -131,6 +149,12 @@ mvsim_add_test(
 	)
 
 mvsim_add_test(
+	TARGET test_shipped_vehicles
+	SOURCES test_shipped_vehicles.cpp
+	LINK_LIBRARIES mvsim::simulator
+	)
+
+mvsim_add_test(
 	TARGET test_suspension
 	SOURCES test_suspension.cpp
 	LINK_LIBRARIES mvsim::simulator
@@ -157,6 +181,24 @@ mvsim_add_test(
 mvsim_add_test(
 	TARGET test_elevation_queries
 	SOURCES test_elevation_queries.cpp
+	LINK_LIBRARIES mvsim::simulator
+	)
+
+mvsim_add_test(
+	TARGET test_world_include
+	SOURCES test_world_include.cpp
+	LINK_LIBRARIES mvsim::simulator
+	)
+
+mvsim_add_test(
+	TARGET test_random_seed
+	SOURCES test_random_seed.cpp
+	LINK_LIBRARIES mvsim::simulator
+	)
+
+mvsim_add_test(
+	TARGET test_slope_load
+	SOURCES test_slope_load.cpp
 	LINK_LIBRARIES mvsim::simulator
 	)
 
