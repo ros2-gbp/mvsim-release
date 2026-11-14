@@ -42,6 +42,44 @@ the one carrying the sensors) aborts the run with a clear error, unless
 ``--allow-unsupported`` is given, in which case it is skipped with a
 warning instead.
 
+Moving blocks
+-------------
+
+The scene is static by default. To have objects that move during the run
+(for example, traffic around the sensor vehicle), give each of them its own
+trajectory with the repeatable option:
+
+.. code-block:: console
+
+   --moving-block <block name>=<trajectory.tum>
+
+- ``<block name>`` is the ``name`` of a ``<block>`` of the world XML, with
+  any of the block geometries above. It is left out of the static scene.
+- The trajectory is a TUM file (``timestamp tx ty tz qx qy qz qw``, in the
+  same epoch-seconds clock as ``--trajectory``) with the pose of the block's
+  own frame in the world along time, full SE(3). It replaces the block's
+  ``<init_pose>``. Before its first pose and after its last one, the block
+  stays at that pose.
+- Several blocks may share one trajectory file, e.g. a vehicle made of two
+  boxes.
+
+Each LiDAR ray returns its nearest hit over the static scene and all moving
+blocks. With ``--shutter rolling``, each azimuth column sees every moving
+block at the block's pose at that column's firing time; with
+``--shutter global``, at the sweep start time. The LiDAR noise and error
+models and the semantic labels apply to moving blocks like to the static
+scene. IMU and odometry do not depend on them.
+
+An unknown block name, a block given twice, an ``<intangible>`` block (those
+are not ray-traced), or a trajectory file that cannot be read or has fewer
+than two poses abort the run with an error.
+
+.. code-block:: console
+
+   $ mvsim-dataset-gen world.xml --trajectory ego.tum -o out.rawlog \
+       --moving-block car1_body=car1.tum --moving-block car1_cabin=car1.tum \
+       --moving-block car2=car2.tum
+
 Trajectory input
 -----------------
 
@@ -82,7 +120,8 @@ Sensors
     sweep; every point's ``t`` field is 0.
 
   Points are emitted as a ``CObservationPointCloud`` /
-  ``CGenericPointsMap`` with ``t``/``ring``/(optional)``intensity`` fields.
+  ``CGenericPointsMap`` with ``t``/``ring``/(optional)``intensity`` fields,
+  and ``label``/``instance`` with ``--labels`` (see below).
   The observation timestamp is the sweep start time, and ``t`` is relative
   to it.
 
@@ -140,6 +179,35 @@ The stock 3D LiDAR definitions expose them as the XML variables
 ``sensor_beam_elevation_std_deg``, ``sensor_beam_azimuth_std_deg``,
 ``sensor_beam_range_bias_std`` and ``sensor_calibration_seed`` (as
 ``<include>`` attributes or environment variables).
+
+Semantic labels
+---------------
+
+Any block or world element (``horizontal_plane``, ``vertical_plane``,
+``elevation_map``) may carry two optional integer tags in ``[0, 65535]``:
+
+- ``<semantic_class>``: its class (0, the default, means unlabeled). The
+  meaning of each value is up to the world author.
+- ``<instance_id>``: its instance (0, the default, means none). Several
+  objects may share one, e.g. the trunk and foliage blocks of one tree.
+
+Tags in a ``<block:class>`` apply to every block of that class, and each
+block may override them:
+
+.. code-block:: xml
+
+   <block:class name="pillar">
+     <geometry type="cylinder" radius="0.4" length="3.0" />
+     <semantic_class>2</semantic_class>
+   </block:class>
+   <block class="pillar"> <init_pose>5 3 0</init_pose> <instance_id>1</instance_id> </block>
+
+With ``--labels``, every LiDAR point gets two ``uint16`` fields, ``label``
+and ``instance``: the tags of the object its ray hit. Labels never change
+the samples: the points are the same as without ``--labels``, for the same
+seed. A mixed return (see ``mixed_pixel_probability``) keeps the labels of
+the surface its own ray hit, unless ``--mixed-return-label N`` gives all of
+them class ``N`` and instance 0 instead.
 
 Output
 ------
