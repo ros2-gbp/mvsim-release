@@ -13,11 +13,13 @@
 
 #include <mrpt/io/CFileGZInputStream.h>
 #include <mrpt/maps/CGenericPointsMap.h>
+#include <mrpt/math/CQuaternion.h>
 #include <mrpt/math/wrap2pi.h>
 #include <mrpt/obs/CObservationIMU.h>
 #include <mrpt/obs/CObservationOdometry.h>
 #include <mrpt/obs/CObservationPointCloud.h>
 #include <mrpt/poses/CPose2D.h>
+#include <mrpt/poses/CPose3D.h>
 #include <mrpt/serialization/CArchive.h>
 #include <mrpt/system/filesystem.h>
 
@@ -26,6 +28,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <functional>
 #include <iomanip>
 #include <limits>
 #include <sstream>
@@ -421,6 +424,465 @@ void test_realistic_error_model()
 	}
 }
 
+struct Sweep
+{
+	double t = 0;  //!< Sweep start time [s]
+	mrpt::maps::CGenericPointsMap::Ptr pts;
+};
+
+/** Every LiDAR sweep of a rawlog, in file order. */
+std::vector<Sweep> loadSweeps(const std::string& rawlogPath)
+{
+	std::vector<Sweep> out;
+	mrpt::io::CFileGZInputStream f(rawlogPath);
+	auto arch = mrpt::serialization::archiveFrom(f);
+	for (;;)
+	{
+		mrpt::serialization::CSerializable::Ptr obj;
+		try
+		{
+			arch >> obj;
+		}
+		catch (const std::exception&)
+		{
+			break;	// EOF
+		}
+		if (!obj)
+		{
+			break;
+		}
+		if (auto obs = std::dynamic_pointer_cast<mrpt::obs::CObservationPointCloud>(obj); obs)
+		{
+			out.push_back(
+				{mrpt::Clock::toDouble(obs->timestamp),
+				 std::dynamic_pointer_cast<mrpt::maps::CGenericPointsMap>(obs->pointcloud)});
+		}
+	}
+	return out;
+}
+
+/** Whether both rawlogs have the same sweeps, point by point (sweep times,
+ * positions, and the `t` and `ring` fields). */
+bool samePoints(const std::string& a, const std::string& b)
+{
+	const auto sa = loadSweeps(a);
+	const auto sb = loadSweeps(b);
+	if (sa.empty() || sa.size() != sb.size())
+	{
+		return false;
+	}
+	for (size_t k = 0; k < sa.size(); k++)
+	{
+		const auto& pa = sa[k].pts;
+		const auto& pb = sb[k].pts;
+		if (sa[k].t != sb[k].t || !pa || !pb || pa->size() != pb->size())
+		{
+			return false;
+		}
+		for (size_t i = 0; i < pa->size(); i++)
+		{
+			float xa, ya, za, xb, yb, zb;
+			pa->getPoint(i, xa, ya, za);
+			pb->getPoint(i, xb, yb, zb);
+			if (xa != xb || ya != yb || za != zb ||
+				pa->getPointField_float(i, "t") != pb->getPointField_float(i, "t") ||
+				pa->getPointField_uint16(i, "ring") != pb->getPointField_uint16(i, "ring"))
+			{
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+// The demo world labels the ground 1, the pillars 2 (instances 1-3) and the
+// crates 3 (instance 4 for crate1, none for crate2).
+void test_semantic_labels()
+{
+	const std::string outPlain = tempPath("plain.rawlog");
+	const std::string outLabels = tempPath("labels.rawlog");
+	EXPECT_TRUE(runDatasetGen(outPlain, "--duration 0.5 --seed 9 --noiseless") == 0);
+	EXPECT_TRUE(runDatasetGen(outLabels, "--duration 0.5 --seed 9 --noiseless --labels") == 0);
+
+	// Labels do not change the samples:
+	EXPECT_TRUE(samePoints(outPlain, outLabels));
+	const auto plain = loadSweeps(outPlain);
+	EXPECT_TRUE(!plain.empty() && plain.front().pts && !plain.front().pts->hasPointField("label"));
+
+	size_t nPoints = 0;
+	size_t nWrong = 0;
+	size_t nPillar = 0;
+	size_t nCrate = 0;
+	for (const auto& sweep : loadSweeps(outLabels))
+	{
+		const auto& pts = sweep.pts;
+		EXPECT_TRUE(pts && pts->hasPointField("label") && pts->hasPointField("instance"));
+		if (!pts || !pts->hasPointField("label"))
+		{
+			continue;
+		}
+		for (size_t i = 0; i < pts->size(); i++)
+		{
+			float x, y, z;
+			pts->getPoint(i, x, y, z);
+			// Each point at the vehicle pose of its own firing time (1 m/s along +X):
+			const double vehX = (sweep.t + pts->getPointField_float(i, "t")) - kTrajT0;
+			const double wx = x + vehX;
+			const double wz = z + kLidarZ;
+			const uint16_t label = pts->getPointField_uint16(i, "label");
+			const uint16_t instance = pts->getPointField_uint16(i, "instance");
+			nPoints++;
+
+			// The object the point lies on: a pillar (by distance to its axis),
+			// else the ground (z=0) or a crate. Within 1 mm of the ground, the
+			// base of a pillar or crate is accepted too.
+			const bool nearGround = wz < 1e-3;
+			const uint16_t crateInstance = std::hypot(wx - 2.0, y - 2.0) < 2.5 ? 4 : 0;
+			bool ok = nearGround ? (label == 1 && instance == 0)
+								 : (label == 3 && instance == crateInstance);
+			if (nearGround)
+			{
+				ok = ok || (label == 3 && instance == crateInstance);
+			}
+			else
+			{
+				nCrate++;
+			}
+			for (size_t p = 0; p < kPillarCenters.size(); p++)
+			{
+				const auto& [cx, cy] = kPillarCenters[p];
+				if (std::hypot(wx - cx, y - cy) < kPillarRadius + 1e-3)
+				{
+					const bool onPillar = label == 2 && instance == p + 1;
+					ok = nearGround ? (ok || onPillar) : onPillar;
+					if (!nearGround)
+					{
+						nPillar++;
+						nCrate--;
+					}
+				}
+			}
+			nWrong += ok ? 0 : 1;
+		}
+	}
+	EXPECT_GT(nPoints, 1000U);
+	EXPECT_GT(nPillar, 100U);
+	EXPECT_GT(nCrate, 100U);
+	EXPECT_TRUE(nWrong == 0);
+
+	// Mixed returns get their own class if asked for, and the samples are
+	// still the same as without labels:
+	const std::string outMixed = tempPath("mixed.rawlog");
+	const std::string outMixedPlain = tempPath("mixedplain.rawlog");
+	setEnv("sensor_mixed_pixel_probability", "1.0");
+	EXPECT_TRUE(runDatasetGen(outMixedPlain, "--duration 0.5 --seed 9") == 0);
+	EXPECT_TRUE(
+		runDatasetGen(outMixed, "--duration 0.5 --seed 9 --labels --mixed-return-label 99") == 0);
+	setEnv("sensor_mixed_pixel_probability", "0");
+	EXPECT_TRUE(samePoints(outMixedPlain, outMixed));
+	size_t nMixed = 0;
+	for (const auto& sweep : loadSweeps(outMixed))
+	{
+		const auto& pts = sweep.pts;
+		for (size_t i = 0; pts && i < pts->size(); i++)
+		{
+			if (pts->getPointField_uint16(i, "label") == 99)
+			{
+				nMixed++;
+				EXPECT_TRUE(pts->getPointField_uint16(i, "instance") == 0);
+			}
+		}
+	}
+	EXPECT_GT(nMixed, 0U);
+
+	// --mixed-return-label requires --labels:
+	EXPECT_TRUE(runDatasetGen(outMixed, "--duration 0.5 --mixed-return-label 99") != 0);
+
+	for (const auto& f : {outPlain, outLabels, outMixed, outMixedPlain})
+	{
+		removeOutputs(f);
+	}
+}
+
+// ---------------------------------------------------------------
+// Moving blocks (--moving-block): the demo world blocks "crate1" (a box of
+// 1.5 x 1.0 x 1.2 m, with its frame at a bottom corner) and "pillar1" (a
+// cylinder of radius 0.4 m, with its frame at the center of its base) follow
+// trajectories written by each test.
+
+/** Writes a TUM trajectory with one knot every 10 ms for t in [tFirst, tLast]
+ * (relative to kTrajT0), and returns its path. */
+std::string writeTum(
+	const std::string& suffix, const std::function<mrpt::poses::CPose3D(double)>& poseAt,
+	double tFirst, double tLast)
+{
+	const std::string path = tempPath(suffix);
+	std::ofstream f(path);
+	f << std::fixed << std::setprecision(9);
+	const int n = static_cast<int>(std::round((tLast - tFirst) / 0.01));
+	for (int i = 0; i <= n; i++)
+	{
+		const double t = tFirst + 0.01 * i;
+		const mrpt::poses::CPose3D p = poseAt(t);
+		mrpt::math::CQuaternionDouble q;
+		p.getAsQuaternion(q);
+		f << kTrajT0 + t << " " << p.x() << " " << p.y() << " " << p.z() << " " << q.x() << " "
+		  << q.y() << " " << q.z() << " " << q.r() << "\n";
+	}
+	return path;
+}
+
+/** The command-line option that makes `block` follow the trajectory file. */
+std::string movingBlockArg(const std::string& block, const std::string& trajFile)
+{
+	return " --moving-block \"" + block + "=" + trajFile + "\"";
+}
+
+struct RigidBoxStats
+{
+	size_t nFace = 0;  //!< Points on the box face towards the sensor
+	double minFaceX = std::numeric_limits<double>::max();
+	double maxFaceX = std::numeric_limits<double>::lowest();
+	size_t nCylinder = 0;  //!< Points on the cylinder, above the box
+	double maxCylinderErr = 0;
+};
+
+/** For test_moving_block_rigid_with_vehicle(): the box seen from the sensor
+ * (sensor frame) in the region where it is if it moves with the vehicle. */
+RigidBoxStats inspectRigidBox(const std::string& rawlogPath)
+{
+	RigidBoxStats st;
+	for (const auto& sweep : loadSweeps(rawlogPath))
+	{
+		for (size_t i = 0; sweep.pts && i < sweep.pts->size(); i++)
+		{
+			float x = 0;
+			float y = 0;
+			float z = 0;
+			sweep.pts->getPoint(i, x, y, z);
+			if (std::abs(y) < 0.6 && z > -0.6 && z < 0.4 && x > 1.5 && x < 4.5)
+			{
+				st.nFace++;
+				st.minFaceX = std::min<double>(st.minFaceX, x);
+				st.maxFaceX = std::max<double>(st.maxFaceX, x);
+			}
+			const double d = std::hypot(x - 4.0, y + 0.75);
+			if (z > 0.5 && d < 0.6)
+			{
+				st.nCylinder++;
+				st.maxCylinderErr = std::max(st.maxCylinderErr, std::abs(d - kPillarRadius));
+			}
+		}
+	}
+	return st;
+}
+
+// A box and a cylinder sharing one trajectory, the one of the vehicle (which
+// moves forward while turning and rolling) plus a constant offset, are seen
+// at a constant place of the sensor frame; a box parked where the former
+// starts is not.
+void test_moving_block_rigid_with_vehicle()
+{
+	const auto vehiclePose = [](double t)
+	{ return mrpt::poses::CPose3D(1.0 * t, 0, 0, 0.2 * t /*yaw*/, 0, 0.1 * t /*roll*/); };
+	// In the sensor frame, the box then spans x=[3,4], y=[-0.75,0.75],
+	// z=[-0.75,0.45], and the cylinder axis is at (4,-0.75):
+	const mrpt::poses::CPose3D offset(4.0, -0.75, 0, mrpt::DEG2RAD(90.0), 0, 0);
+	const auto blockPose = [&](double t) { return vehiclePose(t) + offset; };
+
+	const std::string trajVehicle = writeTum("mbveh.tum", vehiclePose, 0, 1.2);
+	const std::string trajRigid = writeTum("mbrigid.tum", blockPose, 0, 1.2);
+	// Ends before the run starts: the block stays at the last pose.
+	const std::string trajParked = writeTum(
+		"mbparked.tum", [&](double) { return blockPose(0); }, -2.0, -1.0);
+
+	const std::string outRigid = tempPath("mbrigid.rawlog");
+	const std::string outParked = tempPath("mbparked.rawlog");
+	const std::string outIncidence = tempPath("mbincidence.rawlog");
+	const std::string args = "--duration 1.0 --seed 1";
+	const std::string rigidBlocks =
+		movingBlockArg("crate1", trajRigid) + movingBlockArg("pillar1", trajRigid);
+	EXPECT_TRUE(
+		runDatasetGen(kWorld, trajVehicle, outRigid, args + " --noiseless" + rigidBlocks) == 0);
+	EXPECT_TRUE(
+		runDatasetGen(
+			kWorld, trajVehicle, outParked,
+			args + " --noiseless" + movingBlockArg("crate1", trajParked)) == 0);
+	// The error model needs the surface normals: with a wrong one, the face
+	// (seen head-on) would be dropped as a grazing hit.
+	setEnv("sensor_max_incidence_deg", "60");
+	EXPECT_TRUE(runDatasetGen(kWorld, trajVehicle, outIncidence, args + rigidBlocks) == 0);
+	setEnv("sensor_max_incidence_deg", "0");
+
+	const RigidBoxStats rigid = inspectRigidBox(outRigid);
+	EXPECT_GT(rigid.nFace, 1000U);
+	EXPECT_NEAR(rigid.minFaceX, 3.0, 1e-3);
+	EXPECT_NEAR(rigid.maxFaceX, 3.0, 1e-3);
+	EXPECT_GT(rigid.nCylinder, 300U);
+	EXPECT_LT(rigid.maxCylinderErr, 1e-3);
+
+	const RigidBoxStats parked = inspectRigidBox(outParked);
+	EXPECT_GT(parked.nFace, 1000U);
+	EXPECT_GT(parked.maxFaceX - parked.minFaceX, 0.5);
+
+	const RigidBoxStats incidence = inspectRigidBox(outIncidence);
+	EXPECT_GT(incidence.nFace, rigid.nFace * 9 / 10);
+	EXPECT_GT(incidence.minFaceX, 2.9);
+	EXPECT_LT(incidence.maxFaceX, 3.1);
+
+	for (const auto& f : {outRigid, outParked, outIncidence})
+	{
+		removeOutputs(f);
+	}
+	for (const auto& f : {trajVehicle, trajRigid, trajParked})
+	{
+		std::remove(f.c_str());
+	}
+}
+
+// The vehicle moves at 1 m/s along +X, and a box ahead of it at 5 m/s: its
+// face towards the sensor is at 4 + 4*t [m] in the sensor frame, t being the
+// firing time of each point (rolling shutter) or the sweep start (global).
+void test_moving_block_shutter_timing()
+{
+	const std::string trajBlock = writeTum(
+		"mbfast.tum",
+		[](double t) { return mrpt::poses::CPose3D(4.0 + 5.0 * t, -0.5, 0, 0, 0, 0); }, 0, 1.0);
+	const std::string outRolling = tempPath("mbrolling.rawlog");
+	const std::string outGlobal = tempPath("mbglobal.rawlog");
+	const std::string args =
+		"--duration 0.5 --seed 1 --noiseless" + movingBlockArg("crate1", trajBlock);
+	EXPECT_TRUE(runDatasetGen(outRolling, args) == 0);
+	EXPECT_TRUE(runDatasetGen(outGlobal, args + " --shutter global") == 0);
+
+	for (const bool rolling : {true, false})
+	{
+		size_t nFace = 0;
+		double maxErr = 0;
+		// What the pose of the box at the sweep start would give:
+		double minErrSweepStart = std::numeric_limits<double>::max();
+		float minT = std::numeric_limits<float>::max();
+		float maxT = 0;
+		for (const auto& sweep : loadSweeps(rolling ? outRolling : outGlobal))
+		{
+			for (size_t i = 0; sweep.pts && i < sweep.pts->size(); i++)
+			{
+				float x = 0;
+				float y = 0;
+				float z = 0;
+				sweep.pts->getPoint(i, x, y, z);
+				if (std::abs(y) > 0.45 || z < -0.6 || x < 3.5 || x > 7.0)
+				{
+					continue;
+				}
+				const float t = sweep.pts->getPointField_float(i, "t");
+				const double tSweep = sweep.t - kTrajT0;
+				nFace++;
+				maxErr = std::max(maxErr, std::abs(x - (4.0 + 4.0 * (tSweep + t))));
+				minErrSweepStart =
+					std::min(minErrSweepStart, std::abs(x - (4.0 + 4.0 * tSweep - 1.0 * t)));
+				minT = std::min(minT, t);
+				maxT = std::max(maxT, t);
+			}
+		}
+		EXPECT_GT(nFace, 500U);
+		EXPECT_LT(maxErr, 1e-3);
+		if (rolling)
+		{
+			// The face is seen about half a sweep after the sweep start, and
+			// skewed: its columns fire at different times.
+			EXPECT_GT(minErrSweepStart, 0.2);
+			EXPECT_GT(4.0 * (maxT - minT), 0.01);
+		}
+		else
+		{
+			EXPECT_TRUE(maxT == 0);
+		}
+	}
+
+	removeOutputs(outRolling);
+	removeOutputs(outGlobal);
+	std::remove(trajBlock.c_str());
+}
+
+// Blocks following a trajectory that keeps them at their <init_pose> give
+// the same points as the static blocks, up to rounding.
+void test_moving_block_at_init_pose()
+{
+	const std::string trajCrate = writeTum(
+		"mbcrate.tum",
+		[](double) { return mrpt::poses::CPose3D(2, 2, 0, mrpt::DEG2RAD(30.0), 0, 0); }, 0, 0.1);
+	const std::string trajPillar = writeTum(
+		"mbpillar.tum", [](double) { return mrpt::poses::CPose3D(5, -3, 0, 0, 0, 0); }, 0, 0.1);
+	const std::string outStatic = tempPath("mbstatic.rawlog");
+	const std::string outMoving = tempPath("mbsame.rawlog");
+	EXPECT_TRUE(runDatasetGen(outStatic, "--duration 0.5 --seed 1 --noiseless") == 0);
+	EXPECT_TRUE(
+		runDatasetGen(
+			outMoving, "--duration 0.5 --seed 1 --noiseless" + movingBlockArg("crate1", trajCrate) +
+						   movingBlockArg("pillar1", trajPillar)) == 0);
+
+	const auto sa = loadSweeps(outStatic);
+	const auto sb = loadSweeps(outMoving);
+	EXPECT_TRUE(!sa.empty() && sa.size() == sb.size());
+	double maxDiff = 0;
+	for (size_t k = 0; k < sa.size() && k < sb.size(); k++)
+	{
+		const auto& pa = sa[k].pts;
+		const auto& pb = sb[k].pts;
+		EXPECT_TRUE(pa && pb && pa->size() == pb->size());
+		for (size_t i = 0; pa && pb && i < pa->size() && i < pb->size(); i++)
+		{
+			float xa = 0;
+			float ya = 0;
+			float za = 0;
+			float xb = 0;
+			float yb = 0;
+			float zb = 0;
+			pa->getPoint(i, xa, ya, za);
+			pb->getPoint(i, xb, yb, zb);
+			maxDiff = std::max<double>(
+				maxDiff, std::abs(xa - xb) + std::abs(ya - yb) + std::abs(za - zb));
+		}
+	}
+	EXPECT_LT(maxDiff, 1e-4);
+
+	removeOutputs(outStatic);
+	removeOutputs(outMoving);
+	std::remove(trajCrate.c_str());
+	std::remove(trajPillar.c_str());
+}
+
+void test_moving_block_errors()
+{
+	const std::string out = tempPath("mberr.rawlog");
+	const std::string traj = writeTum(
+		"mbok.tum", [](double t) { return mrpt::poses::CPose3D(4.0 + t, 2.0, 0, 0, 0, 0); }, 0,
+		0.5);
+	const std::string emptyTraj = tempPath("mbempty.tum");
+	{
+		std::ofstream f(emptyTraj);
+	}
+	const std::string args = "--duration 0.2";
+	// The option itself works:
+	EXPECT_TRUE(runDatasetGen(out, args + movingBlockArg("crate1", traj)) == 0);
+	// Unknown block, block given twice, missing and empty trajectory files:
+	EXPECT_TRUE(runDatasetGen(out, args + movingBlockArg("nosuchblock", traj)) != 0);
+	EXPECT_TRUE(
+		runDatasetGen(
+			out, args + movingBlockArg("crate1", traj) + movingBlockArg("crate1", traj)) != 0);
+	EXPECT_TRUE(runDatasetGen(out, args + movingBlockArg("crate1", traj + ".missing")) != 0);
+	EXPECT_TRUE(runDatasetGen(out, args + movingBlockArg("crate1", emptyTraj)) != 0);
+	// Malformed arguments:
+	EXPECT_TRUE(runDatasetGen(out, args + " --moving-block crate1") != 0);
+	EXPECT_TRUE(runDatasetGen(out, args + movingBlockArg("crate1", "")) != 0);
+	EXPECT_TRUE(runDatasetGen(out, args + movingBlockArg("", traj)) != 0);
+
+	removeOutputs(out);
+	std::remove(traj.c_str());
+	std::remove(emptyTraj.c_str());
+}
+
 // ---------------------------------------------------------------
 // demo_dataset_gen_2d.world.xml is a linear ramp, z = 0.1*x exactly;
 // demo_dataset_gen_2d.trajectory.txt drives straight along +X, so the
@@ -515,6 +977,8 @@ void test_imu_lever_arm()
 			continue;
 		}
 		nImu++;
+		// The observation carries the mounting pose on the vehicle:
+		EXPECT_LT(std::abs(obsImu->sensorPose.z() - kImuZ), 1e-9);
 		const double fx = obsImu->get(mrpt::obs::IMU_X_ACC);
 		const double fy = obsImu->get(mrpt::obs::IMU_Y_ACC);
 		const double fz = obsImu->get(mrpt::obs::IMU_Z_ACC) + kW * kW * kImuZ;
@@ -540,6 +1004,11 @@ int main()
 	test_determinism_same_seed();
 	test_noiseless_differs_from_noisy();
 	test_realistic_error_model();
+	test_semantic_labels();
+	test_moving_block_rigid_with_vehicle();
+	test_moving_block_shutter_timing();
+	test_moving_block_at_init_pose();
+	test_moving_block_errors();
 	test_2d_trajectory_terrain_following();
 	test_imu_lever_arm();
 
